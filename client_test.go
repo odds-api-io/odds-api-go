@@ -558,6 +558,20 @@ func TestSgpEndpoints(t *testing.T) {
 	}
 }
 
+func TestQuoteSgpTrimsBookmakers(t *testing.T) {
+	var got struct {
+		Bookmakers string `json:"bookmakers"`
+	}
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Write([]byte(`{"eventId":1,"quotes":[]}`))
+	})
+	_, err := c.QuoteSgp(context.Background(), SgpQuoteParams{EventID: 1, Bookmakers: []string{" DraftKings ", ""}, Legs: []SgpQuoteLeg{{LegID: "a"}, {LegID: "b"}}})
+	if err != nil || got.Bookmakers != "DraftKings" {
+		t.Fatalf("bookmakers %q %v", got.Bookmakers, err)
+	}
+}
+
 func TestIterateMappingsFollowsCursor(t *testing.T) {
 	var cursors []string
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

@@ -336,16 +336,20 @@ func (p params) str(key, v string) params {
 }
 
 func (p params) list(key string, v []string) params {
+	if s := joinList(v); s != "" {
+		p.Set(key, s)
+	}
+	return p
+}
+
+func joinList(v []string) string {
 	var parts []string
 	for _, s := range v {
 		if s = strings.TrimSpace(s); s != "" {
 			parts = append(parts, s)
 		}
 	}
-	if len(parts) > 0 {
-		p.Set(key, strings.Join(parts, ","))
-	}
-	return p
+	return strings.Join(parts, ",")
 }
 
 func (p params) ids(key string, v []int64) params {
