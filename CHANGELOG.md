@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Same game parlays: `GetSgpBookmakers`, `GetSgpLegs` and `QuoteSgp` for `GET /sgp/bookmakers`, `GET /sgp/legs` and `POST /sgp/quote`, with types
+
 ## 0.1.1 (2026-11-13)
 
 - Docs: `GetMarkets`, `GetBookmakers`, `OddsParams.Markets` and the README link to the market reference at https://odds-api.io/markets and bookmaker coverage at https://odds-api.io/sportsbooks#coverage.

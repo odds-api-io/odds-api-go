@@ -274,6 +274,20 @@ for _, g := range grades.Grades {
 
 Re-send selections that are not `Final`, at most once a minute.
 
+## Same game parlays
+
+Enabled per key; without it you get an `*APIError` matching `ErrForbidden`. List the legs of a pre-match event, then quote 2 to 10 of them. Each bookmaker answers with a `Price` (a `Decimal`) or a `Status` and `NextAction`.
+
+```go
+legs, err := client.GetSgpLegs(ctx, oddsapi.SgpLegsParams{EventID: 61234567, Bookmakers: []string{"DraftKings"}, Markets: []string{"ML", "Totals"}})
+res, err := client.QuoteSgp(ctx, oddsapi.SgpQuoteParams{
+	EventID:    61234567,
+	Bookmakers: []string{"DraftKings"},
+	Legs:       []oddsapi.SgpQuoteLeg{{LegID: legs.Legs[0].LegID}, {LegID: legs.Legs[1].LegID}},
+})
+fmt.Println(res.Quotes[0].Status, res.Quotes[0].Price)
+```
+
 ## Outrights (golf)
 
 Outrights are a paid add-on: PGA Tour, DP World Tour, LIV Golf and the majors. A key without the add-on gets an `*APIError` matching `ErrForbidden`, whose `IsAddOnRequired()` is true and whose message links to the billing page.
@@ -380,6 +394,9 @@ selected, err = client.ClearSelectedBookmakers(ctx) // once every 12 hours
 | | `GetClosingLines`, `IterateClosingLines` | `GET /historical/closing-lines` |
 | Settlement | `GetSettlements` | `GET /settlements` |
 | | `GradeBets` | `POST /settlements/grade` |
+| Same game parlays | `GetSgpBookmakers` | `GET /sgp/bookmakers` |
+| | `GetSgpLegs` | `GET /sgp/legs` |
+| | `QuoteSgp` | `POST /sgp/quote` |
 | Outrights | `GetOutrights` | `GET /outrights` |
 | | `GetOutrightOdds` | `GET /outrights/odds` |
 | | `GetOutrightResults` | `GET /outrights/results` |
