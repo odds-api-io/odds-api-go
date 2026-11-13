@@ -130,7 +130,7 @@ live, err := client.SearchEvents(ctx, oddsapi.SearchEventsParams{Query: "Liverpo
 
 Prices are `oddsapi.Decimal` values that keep the exact string the API sent (`"2.10"`); call `.Float()` for a `float64`. Every field of an odds line, including keys such as `1X`, `12` and `X2`, is also available through `line.Price("1X")`.
 
-Market names must match in full: there is no `Match Winner` (use `ML`) and no bare `Over/Under`. Call `GetMarkets(ctx, sport)` to see the names a sport serves.
+Market names must match in full: there is no `Match Winner` (use `ML`) and no bare `Over/Under`. Call `GetMarkets(ctx, sport)` to see the names a sport serves, or browse the [market reference](https://odds-api.io/markets) per sport (for example [football](https://odds-api.io/markets/football)). Bookmaker coverage by sport is at [odds-api.io/sportsbooks](https://odds-api.io/sportsbooks#coverage).
 
 ## Odds comparison and summary
 
