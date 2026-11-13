@@ -28,7 +28,7 @@ import (
 )
 
 // Version is the SDK version, sent in the User-Agent header.
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 // DefaultBaseURL is the production REST endpoint.
 const DefaultBaseURL = "https://api.odds-api.io/v3"
