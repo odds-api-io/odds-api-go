@@ -10,7 +10,8 @@ type OddsParams struct {
 	EventID int64
 	// Bookmakers by name, required, max 30.
 	Bookmakers []string
-	// Markets by exact name, max 40. Strongly recommended: a full response can be very large.
+	// Markets by exact name, max 40, as listed at https://odds-api.io/markets.
+	// Strongly recommended: a full response can be very large.
 	Markets []string
 }
 

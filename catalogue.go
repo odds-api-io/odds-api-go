@@ -33,6 +33,8 @@ func (c *Client) GetLeagues(ctx context.Context, p LeaguesParams) ([]League, err
 
 // GetMarkets returns the exact market names a sport serves, with shape,
 // period and whether each is served prematch and live. No API key needed.
+// The same catalogue is browsable per sport at https://odds-api.io/markets
+// (for example https://odds-api.io/markets/football).
 func (c *Client) GetMarkets(ctx context.Context, sport string) (*MarketsResponse, error) {
 	if sport == "" {
 		return nil, errRequired("sport")
@@ -53,6 +55,7 @@ func (c *Client) GetAllMarkets(ctx context.Context) (map[string][]MarketInfo, er
 }
 
 // GetBookmakers lists all bookmakers with their current status. No API key needed.
+// Coverage by sport: https://odds-api.io/sportsbooks#coverage
 func (c *Client) GetBookmakers(ctx context.Context) ([]Bookmaker, error) {
 	var out []Bookmaker
 	_, err := c.sendJSON(ctx, request{path: "bookmakers", noAuth: true}, &out)
