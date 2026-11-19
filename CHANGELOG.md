@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 (2026-11-19)
+
+- Same game parlays: `GetSgpBookmakers`, `GetSgpLegs` and `QuoteSgp` for `GET /sgp/bookmakers`, `GET /sgp/legs` and `POST /sgp/quote`, with types
+- `SgpLegsResponse.Bookmakers`: per requested bookmaker, whether its legs could be checked (`Status`, `Retryable`, `NextAction`, `Reason`, `RetryAfter`)
+- `SgpNext*` constants for `NextAction`. `Reason` is a sentence for display; branch on `Status` and `NextAction`
+
 ## 0.1.1 (2026-11-13)
 
 - Docs: `GetMarkets`, `GetBookmakers`, `OddsParams.Markets` and the README link to the market reference at https://odds-api.io/markets and bookmaker coverage at https://odds-api.io/sportsbooks#coverage.
