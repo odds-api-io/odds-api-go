@@ -723,7 +723,6 @@ type SgpBookmaker struct {
 	Name         string   `json:"name"`
 	Sports       []string `json:"sports"`
 	MaxLegs      int      `json:"maxLegs"`
-	Prebuilt     bool     `json:"prebuilt"`
 	Jurisdiction string   `json:"jurisdiction"`
 	// Status is live, paused or degraded.
 	Status string `json:"status"`

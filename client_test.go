@@ -507,7 +507,7 @@ func TestSgpEndpoints(t *testing.T) {
 			if q.Get("sport") != "basketball" {
 				t.Errorf("sport = %q", q.Get("sport"))
 			}
-			w.Write([]byte(`[{"name":"DraftKings","sports":["basketball"],"maxLegs":10,"prebuilt":false,"jurisdiction":"US-WV","status":"live"}]`))
+			w.Write([]byte(`[{"name":"DraftKings","sports":["basketball"],"maxLegs":10,"jurisdiction":"US-WV","status":"live"}]`))
 		case "/v3/sgp/legs":
 			if q.Get("eventId") != "1" || q.Get("bookmakers") != "DraftKings" || q.Get("markets") != "ML,Totals" || q.Get("limit") != "50" || q.Get("skip") != "10" {
 				t.Errorf("query %v", q)
