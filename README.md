@@ -276,17 +276,59 @@ Re-send selections that are not `Final`, at most once a minute.
 
 ## Same game parlays
 
-Enabled per key; without it you get an `*APIError` matching `ErrForbidden`. List the legs of a pre-match event, then quote 2 to 10 of them. Each bookmaker answers with a `Price` (a `Decimal`) or a `Status` and `NextAction`.
+Included in all paid plans. `GetSgpBookmakers` (`GET /v3/sgp/bookmakers`) returns the bookmakers that quote same game parlays right now; more are being added. List the legs of a pre-match event, then quote 2 to 10 of them. Each bookmaker answers with a `Price` (a `Decimal`) or a `Status` and `NextAction`. Branch on those two; `Reason` is a sentence for display and its wording can change.
 
 ```go
-legs, err := client.GetSgpLegs(ctx, oddsapi.SgpLegsParams{EventID: 61234567, Bookmakers: []string{"DraftKings"}, Markets: []string{"ML", "Totals"}})
+const eventID = 61234567
+listed, err := client.GetSgpLegs(ctx, oddsapi.SgpLegsParams{EventID: eventID, Bookmakers: []string{"DraftKings", "BetMGM"}, Markets: []string{"ML", "Totals"}})
+if err != nil {
+	log.Fatal(err)
+}
+// A bookmaker whose legs could not be checked says why; its legs all read Eligible false.
+var books []string
+for _, b := range listed.Bookmakers {
+	if b.Status == oddsapi.SgpQuoteOK {
+		books = append(books, b.Bookmaker)
+	}
+}
+pick := func(market, side string) string {
+	for _, l := range listed.Legs {
+		ok := l.Market == market && l.Side == side
+		for _, b := range books {
+			ok = ok && l.Bookmakers[b].Eligible
+		}
+		if ok {
+			return l.LegID
+		}
+	}
+	return ""
+}
+ml, total := pick("ML", "home"), pick("Totals", "over")
+if ml == "" || total == "" || len(books) == 0 {
+	log.Fatal("no ML and Totals legs that these bookmakers can combine")
+}
+
 res, err := client.QuoteSgp(ctx, oddsapi.SgpQuoteParams{
-	EventID:    61234567,
-	Bookmakers: []string{"DraftKings"},
-	Legs:       []oddsapi.SgpQuoteLeg{{LegID: legs.Legs[0].LegID}, {LegID: legs.Legs[1].LegID}},
+	EventID:    eventID,
+	Bookmakers: books,
+	Legs:       []oddsapi.SgpQuoteLeg{{LegID: ml}, {LegID: total}},
 })
-fmt.Println(res.Quotes[0].Status, res.Quotes[0].Price)
+if err != nil {
+	log.Fatal(err)
+}
+for _, q := range res.Quotes {
+	switch {
+	case q.Status == oddsapi.SgpQuoteOK:
+		fmt.Println(q.Bookmaker, q.Price, "vs", q.LegsMultiplied)
+	case q.NextAction == oddsapi.SgpNextRetry || q.NextAction == oddsapi.SgpNextRetryLater:
+		fmt.Println(q.Bookmaker, "retry in", q.RetryAfter, "s")
+	default:
+		fmt.Println(q.Bookmaker, q.NextAction, q.LegIDs, q.Reason)
+	}
+}
 ```
+
+`NextAction` is one of `change_legs`, `remove_leg` (drop the legs in `LegIDs`), `refresh_legs` (call `GetSgpLegs` again), `retry`, `retry_later` (wait `RetryAfter` seconds) or `choose_other_bookmaker`; the `SgpNext*` constants name them. A quote can take up to 8 seconds, and at most 2 quotes run at once per account. See the [same game parlay guide](https://docs.odds-api.io/guides/sgp).
 
 ## Outrights (golf)
 

@@ -18,6 +18,8 @@ func (c *Client) GetSgpBookmakers(ctx context.Context, sport string) ([]SgpBookm
 
 // GetSgpLegs lists the legs of a pre-match event that can go into a same game
 // parlay, with a LegID for each and whether each bookmaker can combine it.
+// Bookmakers in the response says, per requested bookmaker, whether its legs
+// could be checked; when its Status is not "ok", every leg reads Eligible false there.
 func (c *Client) GetSgpLegs(ctx context.Context, p SgpLegsParams) (*SgpLegsResponse, error) {
 	if p.EventID == 0 {
 		return nil, errRequired("EventID")
@@ -35,7 +37,9 @@ func (c *Client) GetSgpLegs(ctx context.Context, p SgpLegsParams) (*SgpLegsRespo
 }
 
 // QuoteSgp prices 2 to 10 legs as a same game parlay at each bookmaker. Every
-// requested bookmaker gets one entry in Quotes; check Status and NextAction.
+// requested bookmaker gets one entry in Quotes, in request order; branch on
+// Status and NextAction. A quote can take up to 8 seconds, and at most 2 run at
+// once per account (a third gets a 429).
 func (c *Client) QuoteSgp(ctx context.Context, p SgpQuoteParams) (*SgpQuoteResponse, error) {
 	if p.EventID == 0 {
 		return nil, errRequired("EventID")

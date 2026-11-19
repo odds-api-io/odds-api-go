@@ -696,7 +696,18 @@ const (
 	SgpBookmakerDegraded = "degraded"
 )
 
-// SgpQuoteStatus values.
+// SgpNextAction values: what to do when a status is not "ok".
+const (
+	SgpNextChangeLegs           = "change_legs"
+	SgpNextRemoveLeg            = "remove_leg"
+	SgpNextRefreshLegs          = "refresh_legs"
+	SgpNextRetry                = "retry"
+	SgpNextRetryLater           = "retry_later"
+	SgpNextChooseOtherBookmaker = "choose_other_bookmaker"
+)
+
+// SgpQuoteStatus values. SgpLegsBookmaker.Status uses SgpQuoteOK,
+// SgpQuoteLegUnavailable, SgpQuoteUnsupported and SgpQuoteTemporarilyUnavailable.
 const (
 	SgpQuoteOK                     = "ok"
 	SgpQuoteNotCombinable          = "not_combinable"
@@ -722,7 +733,7 @@ type SgpBookmaker struct {
 type SgpLegsParams struct {
 	// EventID of a pre-match event, required.
 	EventID int64
-	// Bookmakers, required, max 8.
+	// Bookmakers, required, max 8 per request.
 	Bookmakers []string
 	// Markets keeps only these market names, max 40.
 	Markets []string
@@ -752,12 +763,30 @@ type SgpLeg struct {
 	Bookmakers map[string]SgpLegBook `json:"bookmakers"`
 }
 
+// SgpLegsBookmaker says whether a requested bookmaker's legs could be
+// checked. When Status is not "ok", every leg reads Eligible false at that
+// bookmaker.
+type SgpLegsBookmaker struct {
+	Bookmaker string `json:"bookmaker"`
+	// Status is ok, leg_unavailable, unsupported or temporarily_unavailable.
+	Status    string `json:"status"`
+	Retryable bool   `json:"retryable,omitempty"`
+	// NextAction is SgpNextRetryLater or SgpNextChooseOtherBookmaker.
+	NextAction string `json:"nextAction,omitempty"`
+	// Reason is a sentence for display; branch on Status and NextAction.
+	Reason string `json:"reason,omitempty"`
+	// RetryAfter is in seconds.
+	RetryAfter int `json:"retryAfter,omitempty"`
+}
+
 // SgpLegsResponse is GET /sgp/legs.
 type SgpLegsResponse struct {
-	EventID ID       `json:"eventId"`
-	Date    Time     `json:"date"`
-	Status  string   `json:"status"`
-	Legs    []SgpLeg `json:"legs"`
+	EventID ID     `json:"eventId"`
+	Date    Time   `json:"date"`
+	Status  string `json:"status"`
+	// Bookmakers has one entry per requested bookmaker, in request order.
+	Bookmakers []SgpLegsBookmaker `json:"bookmakers"`
+	Legs       []SgpLeg           `json:"legs"`
 	// HasMore is true when another call with a higher Skip returns more legs.
 	HasMore bool `json:"hasMore"`
 }
@@ -779,7 +808,7 @@ type SgpQuoteLeg struct {
 type SgpQuoteParams struct {
 	// EventID of a pre-match event, required.
 	EventID int64
-	// Bookmakers, required, max 8.
+	// Bookmakers, required, max 8 per request.
 	Bookmakers []string
 	// Legs, 2 to 10.
 	Legs []SgpQuoteLeg
@@ -794,14 +823,16 @@ type SgpQuoteLegResult struct {
 	PriceMoved bool     `json:"priceMoved,omitempty"`
 }
 
-// SgpQuoteLinks are betslip links.
+// SgpQuoteLinks are betslip links. Either is empty when the bookmaker gives none.
 type SgpQuoteLinks struct {
 	Desktop string `json:"desktop,omitempty"`
 	Mobile  string `json:"mobile,omitempty"`
 }
 
 // SgpBookQuote is one bookmaker's answer: a parlay Price when Status is
-// "ok", otherwise Status, NextAction and Reason say what to do.
+// "ok", otherwise Retryable, NextAction and Reason say what to do. Branch on
+// Status and NextAction; Reason is a sentence for display whose wording can
+// change, and on "ok" the only reason is the code "redundant_leg".
 type SgpBookQuote struct {
 	Bookmaker          string              `json:"bookmaker"`
 	Status             string              `json:"status"`
@@ -809,7 +840,9 @@ type SgpBookQuote struct {
 	LegsMultiplied     Decimal             `json:"legsMultiplied,omitempty"`
 	PriceAdjustmentPct string              `json:"priceAdjustmentPct,omitempty"`
 	Legs               []SgpQuoteLegResult `json:"legs,omitempty"`
-	// LegIDs are the legs that made the quote fail (leg_unavailable).
+	// LegIDs are the legs that made the quote fail (always on leg_unavailable;
+	// on not_combinable and suspended when the bookmaker names them), or on ok
+	// with reason redundant_leg the legs the bookmaker ignored as implied by the others.
 	LegIDs         []string       `json:"legIds,omitempty"`
 	Links          *SgpQuoteLinks `json:"links,omitempty"`
 	Jurisdiction   string         `json:"jurisdiction,omitempty"`
@@ -819,7 +852,8 @@ type SgpBookQuote struct {
 	CacheExpiresAt Time           `json:"cacheExpiresAt"`
 	Retryable      bool           `json:"retryable,omitempty"`
 	// RetryAfter is in seconds.
-	RetryAfter int    `json:"retryAfter,omitempty"`
+	RetryAfter int `json:"retryAfter,omitempty"`
+	// NextAction is one of the SgpNext* values; empty on ok.
 	NextAction string `json:"nextAction,omitempty"`
 	Reason     string `json:"reason,omitempty"`
 }

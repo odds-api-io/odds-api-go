@@ -512,7 +512,7 @@ func TestSgpEndpoints(t *testing.T) {
 			if q.Get("eventId") != "1" || q.Get("bookmakers") != "DraftKings" || q.Get("markets") != "ML,Totals" || q.Get("limit") != "50" || q.Get("skip") != "10" {
 				t.Errorf("query %v", q)
 			}
-			w.Write([]byte(`{"eventId":1,"legs":[{"legId":"1|Totals|221.5||over","market":"Totals","hdp":221.5,"side":"over","bookmakers":{"DraftKings":{"eligible":true,"price":"1.93","updatedAt":"2026-11-12T18:00:00Z"}}}],"hasMore":true}`))
+			w.Write([]byte(`{"eventId":1,"status":"pending","date":"2026-11-14T00:30:00Z","bookmakers":[{"bookmaker":"DraftKings","status":"ok"},{"bookmaker":"Hard Rock","status":"temporarily_unavailable","retryable":true,"nextAction":"retry_later","reason":"x","retryAfter":2}],"legs":[{"legId":"1|Totals|221.5||over","market":"Totals","hdp":221.5,"side":"over","bookmakers":{"DraftKings":{"eligible":true,"price":"1.93","updatedAt":"2026-11-12T18:00:00Z"}}}],"hasMore":true}`))
 		case "/v3/sgp/quote":
 			if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/json" {
 				t.Errorf("%s %s", r.Method, r.Header.Get("Content-Type"))
@@ -539,6 +539,9 @@ func TestSgpEndpoints(t *testing.T) {
 	if err != nil || !legs.HasMore || len(legs.Legs) != 1 || *legs.Legs[0].Hdp != 221.5 || legs.Legs[0].Bookmakers["DraftKings"].Price != "1.93" {
 		t.Fatalf("legs %+v %v", legs, err)
 	}
+	if len(legs.Bookmakers) != 2 || legs.Bookmakers[0].Status != SgpQuoteOK || legs.Bookmakers[1].NextAction != SgpNextRetryLater || !legs.Bookmakers[1].Retryable || legs.Bookmakers[1].RetryAfter != 2 {
+		t.Errorf("legs bookmakers %+v", legs.Bookmakers)
+	}
 	res, err := c.QuoteSgp(ctx, SgpQuoteParams{EventID: 1, Bookmakers: []string{"DraftKings", "Bet365"}, Legs: []SgpQuoteLeg{
 		{LegID: "1|ML|||home"},
 		{LegID: "1|Totals|221.5||over", ExpectedPrice: "1.95"},
@@ -550,7 +553,7 @@ func TestSgpEndpoints(t *testing.T) {
 	if q.Status != SgpQuoteOK || q.Price != "3.38" || !q.Legs[1].PriceMoved || q.Links.Desktop != "https://d" || q.QuotedAt.IsZero() {
 		t.Errorf("quote %+v", q)
 	}
-	if res.Quotes[1].Status != SgpQuoteUnsupported || res.Quotes[1].NextAction != "choose_other_bookmaker" {
+	if res.Quotes[1].Status != SgpQuoteUnsupported || res.Quotes[1].NextAction != SgpNextChooseOtherBookmaker {
 		t.Errorf("second %+v", res.Quotes[1])
 	}
 	if len(paths) != 3 {
