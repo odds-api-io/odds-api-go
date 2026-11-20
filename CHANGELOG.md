@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-11-20)
+
+- Docs: coverage is now 500+ bookmakers in the package doc and README.
+
 ## 0.2.0 (2026-11-19)
 
 - Same game parlays: `GetSgpBookmakers`, `GetSgpLegs` and `QuoteSgp` for `GET /sgp/bookmakers`, `GET /sgp/legs` and `POST /sgp/quote`, with types
