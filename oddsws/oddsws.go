@@ -122,11 +122,21 @@ type Message struct {
 	Raw json.RawMessage `json:"-"`
 }
 
-// HandshakeError is returned when the server refuses the connection (bad
-// parameters, invalid key, no WebSocket access). It is not retried.
+// HandshakeError is returned when the server refuses the connection. Run
+// retries 429 and 5xx (a server restarting or draining) with backoff, waiting
+// at least RetryAfter. A 403 right after the server dropped a live connection
+// is retried a few times, since a restarting server can refuse briefly. Other
+// refusals (bad parameters, invalid key, no WebSocket access) are not retried.
 type HandshakeError struct {
 	StatusCode int
 	Body       string
+	// RetryAfter is the server's Retry-After header, zero when absent.
+	RetryAfter time.Duration
+}
+
+// Temporary reports whether the refusal is worth retrying (429 or 5xx).
+func (e *HandshakeError) Temporary() bool {
+	return e.StatusCode == http.StatusTooManyRequests || (e.StatusCode >= 500 && e.StatusCode < 600)
 }
 
 func (e *HandshakeError) Error() string {
@@ -161,7 +171,11 @@ func Dial(ctx context.Context, cfg Config) (*Conn, error) {
 		if resp != nil {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			resp.Body.Close()
-			return nil, &HandshakeError{StatusCode: resp.StatusCode, Body: redact(string(body), cfg.APIKey)}
+			return nil, &HandshakeError{
+				StatusCode: resp.StatusCode,
+				Body:       redact(string(body), cfg.APIKey),
+				RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()),
+			}
 		}
 		return nil, fmt.Errorf("oddsws: dial: %s", redact(err.Error(), cfg.APIKey))
 	}
@@ -194,7 +208,7 @@ func (c *Conn) Read() (*Message, error) {
 	}
 	var m Message
 	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("oddsws: decode message: %w", err)
+		return nil, &decodeError{err}
 	}
 	m.Raw = data
 	return &m, nil
@@ -243,8 +257,8 @@ func (s *Stream) observe(seq int64) {
 }
 
 // Run connects and calls fn for every message until ctx is done, fn returns
-// an error, the handshake is refused, or the connection is replaced by a newer
-// one. It reconnects with backoff and resumes from LastSeq. On resync_required
+// an error, the handshake is refused for good (see HandshakeError), or the
+// connection is replaced by a newer one. It reconnects with backoff and resumes from LastSeq. On resync_required
 // the stored LastSeq is cleared before fn is called: rebuild from REST and
 // call SetLastSeq with the snapshot's Seq. Run returns ctx.Err() when ctx ends.
 func (s *Stream) Run(ctx context.Context, fn func(*Message) error) error {
@@ -258,16 +272,21 @@ func (s *Stream) Run(ctx context.Context, fn func(*Message) error) error {
 	}
 
 	failures := 0
+	forbiddenRetries := 0
 	for {
 		cfg := s.cfg
 		cfg.LastSeq = s.LastSeq()
 		conn, err := Dial(ctx, cfg)
 		if err == nil {
 			failures = 0
+			forbiddenRetries = 0
 			err = s.consume(ctx, conn, fn)
 			conn.Close()
 			if err == nil || errors.Is(err, errHandler) {
 				return unwrapHandler(err)
+			}
+			if droppedByServer(err) {
+				forbiddenRetries = maxForbiddenRetriesAfterDrop
 			}
 		}
 		if ctx.Err() != nil {
@@ -275,8 +294,14 @@ func (s *Stream) Run(ctx context.Context, fn func(*Message) error) error {
 		}
 		var he *HandshakeError
 		var re *ReplacedError
-		if errors.As(err, &he) || errors.As(err, &re) {
+		if errors.As(err, &re) {
 			return err
+		}
+		if errors.As(err, &he) && !he.Temporary() {
+			if he.StatusCode != http.StatusForbidden || forbiddenRetries == 0 {
+				return err
+			}
+			forbiddenRetries--
 		}
 
 		failures++
@@ -293,6 +318,9 @@ func (s *Stream) Run(ctx context.Context, fn func(*Message) error) error {
 				delay = max(delay, 3*time.Second)
 			}
 		}
+		if he != nil {
+			delay = max(delay, he.RetryAfter)
+		}
 		if s.cfg.OnReconnect != nil {
 			s.cfg.OnReconnect(failures, delay, s.LastSeq(), err)
 		}
@@ -305,6 +333,11 @@ func (s *Stream) Run(ctx context.Context, fn func(*Message) error) error {
 		}
 	}
 }
+
+type decodeError struct{ err error }
+
+func (e *decodeError) Error() string { return "oddsws: decode message: " + e.err.Error() }
+func (e *decodeError) Unwrap() error { return e.err }
 
 var errHandler = errors.New("oddsws: handler")
 
@@ -342,6 +375,42 @@ func (s *Stream) consume(ctx context.Context, conn *Conn, fn func(*Message) erro
 			return &handlerError{err}
 		}
 	}
+}
+
+// maxForbiddenRetriesAfterDrop bounds how often a 403 is retried after the
+// server dropped a live connection, so a revoked key still stops Run.
+const maxForbiddenRetriesAfterDrop = 3
+
+// droppedByServer reports whether an established connection ended the way a
+// restarting server ends it: close 1001, 1006 or 1012, or a broken transport.
+func droppedByServer(err error) bool {
+	var ce *websocket.CloseError
+	if errors.As(err, &ce) {
+		switch ce.Code {
+		case websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseServiceRestart:
+			return true
+		}
+		return false
+	}
+	var de *decodeError
+	return !errors.As(err, &de)
+}
+
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.ParseInt(v, 10, 64); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(min(secs, int64(time.Hour/time.Second))) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil && t.After(now) {
+		return min(t.Sub(now), time.Hour)
+	}
+	return 0
 }
 
 func backoff(initial, maxDelay time.Duration, attempt int) time.Duration {
