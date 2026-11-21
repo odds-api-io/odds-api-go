@@ -211,7 +211,7 @@ err = stream.Run(ctx, func(m *oddsws.Message) error {
 })
 ```
 
-`Run` returns when `ctx` ends, when your handler returns an error, when the handshake is refused (`*oddsws.HandshakeError`: 400, 401, 403, 426) or when a newer connection on the same key replaced this one (`*oddsws.ReplacedError`, close 1008; two connections per key). Close 1012 (server restart) reconnects after a second and 1013 (cooldown) waits at least 3 seconds. `stream.LastSeq()` is the resume point to persist. Options: `MaxReconnectAttempts`, `InitialReconnectDelay`, `MaxReconnectDelay`, `ReadTimeout`, `OnReconnect`, `DisableReplayComplete` and a custom `Dialer`. For a single connection without reconnects, use `oddsws.Dial` and `conn.Read()`.
+`Run` returns when `ctx` ends, when your handler returns an error, when the handshake is refused (`*oddsws.HandshakeError`: 400, 401, 403, 426) or when a newer connection on the same key replaced this one (`*oddsws.ReplacedError`, close 1008; two connections per key). Close 1012 (server restart) reconnects after a second and 1013 (cooldown) waits at least 3 seconds. A handshake refused with 429 or 5xx (for example the 503 a restarting server sends) is retried with backoff, waiting at least as long as its `Retry-After` header asks. A 403 right after the server dropped a live connection is retried up to 3 times; a 403 on the first connect stays fatal. `stream.LastSeq()` is the resume point to persist. Options: `MaxReconnectAttempts`, `InitialReconnectDelay`, `MaxReconnectDelay`, `ReadTimeout`, `OnReconnect`, `DisableReplayComplete` and a custom `Dialer`. For a single connection without reconnects, use `oddsws.Dial` and `conn.Read()`.
 
 ## Historical odds and closing lines
 
