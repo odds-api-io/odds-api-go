@@ -21,6 +21,14 @@ type fakeServer struct {
 	queries  []string
 	sessions [][]string
 	closes   []int
+	// refuse answers the handshake with this attempt number (0-based) with an HTTP error.
+	refuse   map[int]refusal
+	attempts int
+}
+
+type refusal struct {
+	status     int
+	retryAfter string
 }
 
 func (f *fakeServer) handler(w http.ResponseWriter, r *http.Request) {
@@ -30,6 +38,18 @@ func (f *fakeServer) handler(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Query().Get("apiKey") != testKey {
 		http.Error(w, `{"error":"invalid apiKey"}`, http.StatusUnauthorized)
+		return
+	}
+	f.mu.Lock()
+	attempt := f.attempts
+	f.attempts++
+	ref, refused := f.refuse[attempt]
+	f.mu.Unlock()
+	if refused {
+		if ref.retryAfter != "" {
+			w.Header().Set("Retry-After", ref.retryAfter)
+		}
+		http.Error(w, `{"error":"refused"}`, ref.status)
 		return
 	}
 	f.mu.Lock()
@@ -212,5 +232,125 @@ func TestBuildURL(t *testing.T) {
 	if !strings.HasPrefix(u, DefaultURL+"?") || !strings.Contains(u, "sport=football%2Cbasketball") ||
 		!strings.Contains(u, "status=live") || strings.Contains(u, "replayComplete") {
 		t.Fatalf("url %s", u)
+	}
+}
+
+func TestTemporaryHandshakeRefusalIsRetried(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusBadGateway} {
+		f := &fakeServer{
+			sessions: [][]string{{`{"type":"welcome"}`}},
+			closes:   []int{0},
+			refuse:   map[int]refusal{0: {status: status}, 1: {status: status}},
+		}
+		url := startServer(t, f)
+		var causes []error
+		s := New(Config{APIKey: testKey, URL: url, Markets: []string{"ML"}, InitialReconnectDelay: time.Millisecond,
+			OnReconnect: func(_ int, _ time.Duration, _ int64, cause error) { causes = append(causes, cause) }})
+		stop := errors.New("stop")
+		err := s.Run(context.Background(), func(m *Message) error { return stop })
+		if !errors.Is(err, stop) {
+			t.Fatalf("%d: Run returned %v", status, err)
+		}
+		var he *HandshakeError
+		if len(causes) != 2 || !errors.As(causes[0], &he) || he.StatusCode != status {
+			t.Fatalf("%d: causes %v", status, causes)
+		}
+	}
+}
+
+func TestRetryAfterSetsMinimumDelay(t *testing.T) {
+	f := &fakeServer{
+		sessions: [][]string{{`{"type":"welcome"}`}},
+		closes:   []int{0},
+		refuse:   map[int]refusal{0: {status: http.StatusServiceUnavailable, retryAfter: "1"}},
+	}
+	url := startServer(t, f)
+	var delays []time.Duration
+	s := New(Config{APIKey: testKey, URL: url, Markets: []string{"ML"}, InitialReconnectDelay: time.Millisecond,
+		OnReconnect: func(_ int, d time.Duration, _ int64, _ error) { delays = append(delays, d) }})
+	stop := errors.New("stop")
+	if err := s.Run(context.Background(), func(*Message) error { return stop }); !errors.Is(err, stop) {
+		t.Fatalf("Run returned %v", err)
+	}
+	if len(delays) != 1 || delays[0] < time.Second {
+		t.Fatalf("delays %v", delays)
+	}
+}
+
+func TestGiveUpKeepsHandshakeError(t *testing.T) {
+	f := &fakeServer{refuse: map[int]refusal{0: {status: 503}, 1: {status: 503}, 2: {status: 503}}}
+	url := startServer(t, f)
+	s := New(Config{APIKey: testKey, URL: url, Markets: []string{"ML"}, InitialReconnectDelay: time.Millisecond, MaxReconnectAttempts: 2})
+	err := s.Run(context.Background(), func(*Message) error { return nil })
+	var he *HandshakeError
+	if !errors.As(err, &he) || he.StatusCode != 503 || !strings.Contains(err.Error(), "gave up after 2") {
+		t.Fatalf("Run returned %v", err)
+	}
+}
+
+func TestForbiddenAfterRestartIsRetriedBriefly(t *testing.T) {
+	f := &fakeServer{
+		sessions: [][]string{{`{"type":"welcome"}`}, {`{"type":"welcome","message":"back"}`}},
+		closes:   []int{websocket.CloseServiceRestart, 0},
+		refuse:   map[int]refusal{1: {status: 403}, 2: {status: 403}},
+	}
+	url := startServer(t, f)
+	s := New(Config{APIKey: testKey, URL: url, Markets: []string{"ML"}, InitialReconnectDelay: time.Millisecond})
+	stop := errors.New("stop")
+	err := s.Run(context.Background(), func(m *Message) error {
+		if m.Message == "back" {
+			return stop
+		}
+		return nil
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("Run returned %v", err)
+	}
+}
+
+func TestForbiddenAfterRestartGivesUpAfterLimit(t *testing.T) {
+	refuse := map[int]refusal{}
+	for i := 1; i <= 10; i++ {
+		refuse[i] = refusal{status: 403}
+	}
+	f := &fakeServer{sessions: [][]string{{`{"type":"welcome"}`}}, closes: []int{websocket.CloseServiceRestart}, refuse: refuse}
+	url := startServer(t, f)
+	s := New(Config{APIKey: testKey, URL: url, Markets: []string{"ML"}, InitialReconnectDelay: time.Millisecond})
+	err := s.Run(context.Background(), func(*Message) error { return nil })
+	var he *HandshakeError
+	if !errors.As(err, &he) || he.StatusCode != 403 {
+		t.Fatalf("Run returned %v", err)
+	}
+	if f.attempts != 1+maxForbiddenRetriesAfterDrop+1 {
+		t.Fatalf("attempts %d", f.attempts)
+	}
+}
+
+func TestForbiddenOnFirstConnectIsFatal(t *testing.T) {
+	f := &fakeServer{refuse: map[int]refusal{0: {status: 403}}}
+	url := startServer(t, f)
+	s := New(Config{APIKey: testKey, URL: url, Markets: []string{"ML"}, InitialReconnectDelay: time.Millisecond})
+	err := s.Run(context.Background(), func(*Message) error { return nil })
+	var he *HandshakeError
+	if !errors.As(err, &he) || he.StatusCode != 403 || f.attempts != 1 {
+		t.Fatalf("Run returned %v after %d attempts", err, f.attempts)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
+	cases := map[string]time.Duration{
+		"":                              0,
+		"5":                             5 * time.Second,
+		"-3":                            0,
+		"junk":                          0,
+		"999999":                        time.Hour,
+		"Sat, 21 Nov 2026 12:00:30 GMT": 30 * time.Second,
+		"Sat, 21 Nov 2026 11:00:00 GMT": 0,
+	}
+	for in, want := range cases {
+		if got := parseRetryAfter(in, now); got != want {
+			t.Errorf("parseRetryAfter(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

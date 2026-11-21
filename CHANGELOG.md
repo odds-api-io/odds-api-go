@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 (2026-11-21)
+
+- `oddsws`: `Stream.Run` no longer stops when a reconnect handshake is refused with HTTP 429 or 5xx, such as the 503 the server sends while it restarts. These are retried with backoff and wait at least as long as `Retry-After` asks (`HandshakeError.RetryAfter`, capped at one hour). A 403 right after the server dropped a live connection (close 1001, 1006, 1012 or a broken transport) is retried up to 3 times. 400, 401, 426 and a 403 on the first connect stay fatal. After `MaxReconnectAttempts` the returned error still wraps the last `*HandshakeError`.
+
 ## 0.2.1 (2026-11-20)
 
 - Docs: coverage is now 500+ bookmakers in the package doc and README.
