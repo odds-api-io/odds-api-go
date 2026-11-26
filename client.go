@@ -1,5 +1,5 @@
 // Package oddsapi is the official Go client for the Odds-API.io REST API v3:
-// real-time and pre-match sports betting odds from 500+ bookmakers across 34 sports.
+// real-time and pre-match sports betting odds from 500+ bookmakers across 37 sports.
 //
 //	client := oddsapi.NewClient(os.Getenv("ODDS_API_KEY"))
 //	events, err := client.GetEvents(ctx, oddsapi.EventsParams{Sport: "football", League: "england-premier-league"})

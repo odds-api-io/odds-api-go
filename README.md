@@ -4,7 +4,7 @@
 [![CI](https://github.com/odds-api-io/odds-api-go/actions/workflows/ci.yml/badge.svg)](https://github.com/odds-api-io/odds-api-go/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Official Go SDK for the [**Odds-API.io**](https://odds-api.io) sports betting odds API: real-time and pre-match odds from 500+ bookmakers across 34 sports, over REST and WebSocket.
+Official Go SDK for the [**Odds-API.io**](https://odds-api.io) sports betting odds API: real-time and pre-match odds from 500+ bookmakers across 37 sports, over REST and WebSocket.
 
 Prefer another language? See the [Node.js SDK](https://github.com/odds-api-io/odds-api-node), the [Python SDK](https://github.com/odds-api-io/odds-api-python) or the [CLI](https://github.com/odds-api-io/odds-api-cli).
 
@@ -71,7 +71,7 @@ The odds API needs a key from a paid plan. Pick a plan at [**odds-api.io/pricing
 | Ice hockey | NHL |
 | Tennis | ATP, WTA |
 | Esports | CS2, League of Legends, Dota 2 |
-| ...and 27 more | 34 sports in total |
+| ...and 30 more | 37 sports in total |
 
 Odds come from **500+ bookmakers**, including Bet365, DraftKings, FanDuel, Betfair, Unibet and SingBet. See the [full coverage list](https://odds-api.io/sportsbooks#coverage).
 
